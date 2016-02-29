@@ -1,6 +1,6 @@
 package htmlcleaner
 
-import "code.google.com/p/go.net/html/atom"
+import "golang.org/x/net/html/atom"
 
 type Config struct {
 	// element => attribute => allowed
@@ -60,6 +60,14 @@ var DefaultConfig = &Config{
 
 		atom.P:          nil,
 		atom.Blockquote: nil,
+
+		atom.Pre:  nil,
+		atom.Code: nil,
+		atom.Kbd:  nil,
+		atom.Tt:   nil,
+
+		atom.Details: nil,
+		atom.Summary: nil,
 	},
 
 	Attr: map[atom.Atom]bool{

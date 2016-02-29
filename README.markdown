@@ -49,6 +49,14 @@ var DefaultConfig = &Config{
 
 		atom.P:          nil,
 		atom.Blockquote: nil,
+
+		atom.Pre:  nil,
+		atom.Code: nil,
+		atom.Kbd:  nil,
+		atom.Tt:   nil,
+
+		atom.Details: nil,
+		atom.Summary: nil,
 	},
 
 	Attr: map[atom.Atom]bool{
@@ -112,6 +120,3 @@ type Config struct {
 	AllowJavascriptURL bool
 }
 ```
-
---
-**godocdown** http://github.com/robertkrimen/godocdown
