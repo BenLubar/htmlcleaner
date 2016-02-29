@@ -92,7 +92,7 @@ func CleanNode(c *Config, n *html.Node) *html.Node {
 				continue
 			}
 
-			if !c.AllowJavascriptURL && (aatom == atom.Href || aatom == atom.Src) {
+			if !c.AllowJavascriptURL && (aatom == atom.Href || aatom == atom.Src || aatom == atom.Poster) {
 				if i := strings.IndexRune(a.Val, ':'); i >= 0 && strings.IndexRune(a.Val[:i], '/') < 0 {
 					protocol := strings.ToLower(a.Val[:i])
 					if protocol != "http" && protocol != "https" && protocol != "mailto" {
