@@ -22,6 +22,7 @@ var testTable = []struct {
 	{`<script>foo.bar < baz</script>`, `&lt;script&gt;foo.bar &lt; baz&lt;/script&gt;`, nil},
 	{`&`, `&amp;`, nil},
 	{`&amp;`, `&amp;`, nil},
+	{`<invalidtag>&#34;</invalidtag>`, `&lt;invalidtag&gt;&#34;&lt;/invalidtag&gt;`, nil},
 }
 
 func TestCleaner(t *testing.T) {

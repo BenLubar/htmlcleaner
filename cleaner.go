@@ -106,7 +106,7 @@ func CleanNode(c *Config, n *html.Node) *html.Node {
 
 		return n
 	}
-	return text(Render(n))
+	return text(html.UnescapeString(Render(n)))
 }
 
 func cleanChildren(c *Config, parent *html.Node) {
