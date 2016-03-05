@@ -65,7 +65,13 @@ func text(s string) *html.Node {
 // that are not in the set of legal elements are replaced with a textual
 // version of their source code.
 func CleanNode(c *Config, n *html.Node) *html.Node {
+	if c == nil {
+		c = DefaultConfig
+	}
 	if n.Type == html.DoctypeNode {
+		return text(Render(n))
+	}
+	if n.Type == html.CommentNode && c.EscapeComments {
 		return text(Render(n))
 	}
 	if n.Type != html.ElementNode {
@@ -73,9 +79,6 @@ func CleanNode(c *Config, n *html.Node) *html.Node {
 	}
 	if n.Namespace != "" {
 		return text(Render(n))
-	}
-	if c == nil {
-		c = DefaultConfig
 	}
 	if allowedAttr, ok := c.Elem[n.DataAtom]; ok {
 		// copy the node

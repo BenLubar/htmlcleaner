@@ -15,6 +15,9 @@ type Config struct {
 	// <img src> <video src> <audio src>, etc. If false, attributes with
 	// JavaScript URLs are removed.
 	AllowJavascriptURL bool
+
+	// If true, HTML comments are turned into text.
+	EscapeComments bool
 }
 
 var DefaultConfig = &Config{
@@ -75,4 +78,6 @@ var DefaultConfig = &Config{
 	},
 
 	AllowJavascriptURL: false,
+
+	EscapeComments: false,
 }
