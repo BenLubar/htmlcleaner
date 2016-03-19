@@ -65,8 +65,15 @@ func text(s string) *html.Node {
 // that are not in the set of legal elements are replaced with a textual
 // version of their source code.
 func CleanNode(c *Config, n *html.Node) *html.Node {
+	return cleanNodeMax(c, n, 100)
+}
+
+func cleanNodeMax(c *Config, n *html.Node, depth int) *html.Node {
 	if c == nil {
 		c = DefaultConfig
+	}
+	if depth == 0 {
+		return text("[omitted]")
 	}
 	if n.Type == html.DoctypeNode {
 		return text(Render(n))
@@ -85,7 +92,7 @@ func CleanNode(c *Config, n *html.Node) *html.Node {
 		tmp := *n
 		n = &tmp
 
-		cleanChildren(c, n)
+		cleanChildren(c, n, depth)
 
 		attr := n.Attr
 		n.Attr = make([]html.Attribute, 0, len(attr))
@@ -112,10 +119,10 @@ func CleanNode(c *Config, n *html.Node) *html.Node {
 	return text(html.UnescapeString(Render(n)))
 }
 
-func cleanChildren(c *Config, parent *html.Node) {
+func cleanChildren(c *Config, parent *html.Node, depth int) {
 	var children []*html.Node
 	for child := parent.FirstChild; child != nil; child = child.NextSibling {
-		children = append(children, CleanNode(c, child))
+		children = append(children, cleanNodeMax(c, child, depth-1))
 	}
 
 	for i, child := range children {
