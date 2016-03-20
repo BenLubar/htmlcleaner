@@ -48,6 +48,15 @@ func Clean(c *Config, fragment string) string {
 
 	for i, n := range nodes {
 		nodes[i] = CleanNode(c, n)
+		if c.WrapText && nodes[i].Type == html.TextNode {
+			n := &html.Node{
+				Type:     html.ElementNode,
+				Data:     "span",
+				DataAtom: atom.Span,
+			}
+			n.AppendChild(nodes[i])
+			nodes[i] = n
+		}
 	}
 
 	return Render(nodes...)

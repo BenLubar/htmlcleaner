@@ -18,6 +18,9 @@ type Config struct {
 
 	// If true, HTML comments are turned into text.
 	EscapeComments bool
+
+	// Wrap text nodes in at least one tag.
+	WrapText bool
 }
 
 var DefaultConfig = &Config{
@@ -80,4 +83,6 @@ var DefaultConfig = &Config{
 	AllowJavascriptURL: false,
 
 	EscapeComments: false,
+
+	WrapText: false,
 }
