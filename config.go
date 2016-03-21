@@ -1,5 +1,6 @@
 package htmlcleaner
 
+import "regexp"
 import "golang.org/x/net/html/atom"
 
 type Config struct {
@@ -21,6 +22,9 @@ type Config struct {
 
 	// Wrap text nodes in at least one tag.
 	WrapText bool
+
+	// Attributes with these names must have matching values.
+	AttrMatch map[atom.Atom]*regexp.Regexp
 }
 
 var DefaultConfig = &Config{

@@ -120,6 +120,10 @@ func cleanNodeMax(c *Config, n *html.Node, depth int) *html.Node {
 				}
 			}
 
+			if re, ok := c.AttrMatch[aatom]; ok && !re.MatchString(a.Val) {
+				continue
+			}
+
 			n.Attr = append(n.Attr, a)
 		}
 
