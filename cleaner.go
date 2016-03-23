@@ -69,10 +69,12 @@ func Clean(c *Config, fragment string) string {
 				wrapped = append(wrapped, n)
 				continue
 			}
-			wrapper = &html.Node{
-				Type:     html.ElementNode,
-				Data:     "p",
-				DataAtom: atom.P,
+			if wrapper == nil {
+				wrapper = &html.Node{
+					Type:     html.ElementNode,
+					Data:     "p",
+					DataAtom: atom.P,
+				}
 			}
 			wrapper.AppendChild(n)
 		}
