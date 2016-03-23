@@ -48,15 +48,38 @@ func Clean(c *Config, fragment string) string {
 
 	for i, n := range nodes {
 		nodes[i] = CleanNode(c, n)
-		if c.WrapText && nodes[i].Type == html.TextNode && strings.TrimSpace(nodes[i].Data) != "" {
-			n := &html.Node{
+	}
+
+	if c.WrapText {
+		wrapped := make([]*html.Node, 0, len(nodes))
+		var wrapper *html.Node
+		for _, n := range nodes {
+			if n.Type == html.ElementNode {
+				switch n.DataAtom {
+				case atom.Address, atom.Article, atom.Aside, atom.Blockquote, atom.Center, atom.Dd, atom.Details, atom.Dir, atom.Div, atom.Dl, atom.Dt, atom.Fieldset, atom.Figcaption, atom.Figure, atom.Footer, atom.Form, atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6, atom.Header, atom.Hgroup, atom.Hr, atom.Li, atom.Listing, atom.Menu, atom.Nav, atom.Ol, atom.P, atom.Plaintext, atom.Pre, atom.Section, atom.Summary, atom.Table, atom.Ul:
+					if wrapper != nil {
+						wrapped = append(wrapped, wrapper)
+						wrapper = nil
+					}
+					wrapped = append(wrapped, n)
+					continue
+				}
+			}
+			if wrapper == nil && n.Type == html.TextNode && strings.TrimSpace(n.Data) == "" {
+				wrapped = append(wrapped, n)
+				continue
+			}
+			wrapper = &html.Node{
 				Type:     html.ElementNode,
 				Data:     "p",
 				DataAtom: atom.P,
 			}
-			n.AppendChild(nodes[i])
-			nodes[i] = n
+			wrapper.AppendChild(n)
 		}
+		if wrapper != nil {
+			wrapped = append(wrapped, wrapper)
+		}
+		nodes = wrapped
 	}
 
 	return Render(nodes...)
