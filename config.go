@@ -24,7 +24,7 @@ type Config struct {
 	WrapText bool
 
 	// Attributes with these names must have matching values.
-	AttrMatch map[atom.Atom]*regexp.Regexp
+	AttrMatch map[atom.Atom]map[atom.Atom]*regexp.Regexp
 }
 
 var DefaultConfig = &Config{

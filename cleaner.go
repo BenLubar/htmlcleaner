@@ -145,7 +145,7 @@ func cleanNodeMax(c *Config, n *html.Node, depth int) *html.Node {
 				}
 			}
 
-			if re, ok := c.AttrMatch[aatom]; ok && !re.MatchString(a.Val) {
+			if re, ok := c.AttrMatch[n.DataAtom][aatom]; ok && !re.MatchString(a.Val) {
 				continue
 			}
 
