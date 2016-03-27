@@ -40,8 +40,10 @@ func Render(nodes ...*html.Node) string {
 // Clean a fragment of HTML using the specified Config, or the DefaultConfig
 // if it is nil.
 func Clean(c *Config, fragment string) string {
-	nodes := Parse(fragment)
+	return Render(CleanNodes(c, Parse(fragment))...)
+}
 
+func CleanNodes(c *Config, nodes []*html.Node) []*html.Node {
 	if c == nil {
 		c = DefaultConfig
 	}
@@ -84,7 +86,7 @@ func Clean(c *Config, fragment string) string {
 		nodes = wrapped
 	}
 
-	return Render(nodes...)
+	return nodes
 }
 
 func text(s string) *html.Node {
