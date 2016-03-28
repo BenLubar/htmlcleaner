@@ -8,7 +8,8 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// Convenience function that takes a string instead of an io.Reader.
+// Convenience function that takes a string instead of an io.Reader and omits
+// deep trees.
 func Parse(fragment string) []*html.Node {
 	nodes, err := html.ParseFragment(strings.NewReader(fragment), &html.Node{
 		Type:     html.ElementNode,
@@ -18,6 +19,10 @@ func Parse(fragment string) []*html.Node {
 	if err != nil {
 		// should never happen
 		panic(err)
+	}
+
+	for _, n := range nodes {
+		forceMaxDepth(n, 100)
 	}
 
 	return nodes
@@ -101,15 +106,12 @@ func text(s string) *html.Node {
 // that are not in the set of legal elements are replaced with a textual
 // version of their source code.
 func CleanNode(c *Config, n *html.Node) *html.Node {
-	return cleanNodeMax(c, n, 100)
+	return cleanNode(c, n)
 }
 
-func cleanNodeMax(c *Config, n *html.Node, depth int) *html.Node {
+func cleanNode(c *Config, n *html.Node) *html.Node {
 	if c == nil {
 		c = DefaultConfig
-	}
-	if depth == 0 {
-		return text("[omitted]")
 	}
 	if n.Type == html.DoctypeNode {
 		return text(Render(n))
@@ -128,7 +130,7 @@ func cleanNodeMax(c *Config, n *html.Node, depth int) *html.Node {
 		tmp := *n
 		n = &tmp
 
-		cleanChildren(c, n, depth)
+		cleanChildren(c, n)
 
 		attr := n.Attr
 		n.Attr = make([]html.Attribute, 0, len(attr))
@@ -159,10 +161,10 @@ func cleanNodeMax(c *Config, n *html.Node, depth int) *html.Node {
 	return text(html.UnescapeString(Render(n)))
 }
 
-func cleanChildren(c *Config, parent *html.Node, depth int) {
+func cleanChildren(c *Config, parent *html.Node) {
 	var children []*html.Node
 	for child := parent.FirstChild; child != nil; child = child.NextSibling {
-		children = append(children, cleanNodeMax(c, child, depth-1))
+		children = append(children, cleanNode(c, child))
 	}
 
 	for i, child := range children {
@@ -177,5 +179,23 @@ func cleanChildren(c *Config, parent *html.Node, depth int) {
 		} else {
 			child.NextSibling = children[i+1]
 		}
+	}
+}
+
+func forceMaxDepth(n *html.Node, depth int) {
+	if depth == 0 {
+		n.Type = html.TextNode
+		n.FirstChild, n.LastChild = nil, nil
+		n.Attr = nil
+		n.Data = "[omitted]"
+		return
+	}
+
+	if n.Type != html.ElementNode {
+		return
+	}
+
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		forceMaxDepth(c, depth-1)
 	}
 }
