@@ -55,6 +55,24 @@ func CleanNodes(c *Config, nodes []*html.Node) []*html.Node {
 
 	for i, n := range nodes {
 		nodes[i] = CleanNode(c, n)
+		if nodes[i].DataAtom == atom.Li {
+			wrapper := &html.Node{
+				Type:        html.ElementNode,
+				Data:        "ul",
+				DataAtom:    atom.Ul,
+				PrevSibling: nodes[i].PrevSibling,
+				NextSibling: nodes[i].NextSibling,
+			}
+			if wrapper.PrevSibling != nil {
+				wrapper.PrevSibling.NextSibling = wrapper
+			}
+			if wrapper.NextSibling != nil {
+				wrapper.NextSibling.PrevSibling = wrapper
+			}
+			nodes[i].Parent, nodes[i].PrevSibling, nodes[i].NextSibling = nil, nil, nil
+			wrapper.AppendChild(nodes[i])
+			nodes[i] = wrapper
+		}
 	}
 
 	if c.WrapText {

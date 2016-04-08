@@ -1,6 +1,10 @@
 package htmlcleaner
 
-import "testing"
+import (
+	"testing"
+
+	"golang.org/x/net/html/atom"
+)
 
 var testTable = []struct {
 	Input  string
@@ -23,6 +27,7 @@ var testTable = []struct {
 	{`&`, `&amp;`, nil},
 	{`&amp;`, `&amp;`, nil},
 	{`<invalidtag>&#34;</invalidtag>`, `&lt;invalidtag&gt;&#34;&lt;/invalidtag&gt;`, nil},
+	{`<li>`, `<ul><li></li></ul>`, &Config{Elem: map[atom.Atom]map[atom.Atom]bool{atom.Ul: nil, atom.Li: nil}}},
 }
 
 func TestCleaner(t *testing.T) {
