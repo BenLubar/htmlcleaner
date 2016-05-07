@@ -161,7 +161,7 @@ func cleanNode(c *Config, n *html.Node) *html.Node {
 			if !c.AllowJavascriptURL && (aatom == atom.Href || aatom == atom.Src || aatom == atom.Poster) {
 				if i := strings.IndexRune(a.Val, ':'); i >= 0 && strings.IndexRune(a.Val[:i], '/') < 0 {
 					protocol := strings.ToLower(a.Val[:i])
-					if protocol != "http" && protocol != "https" && protocol != "mailto" {
+					if protocol != "http" && protocol != "https" && protocol != "mailto" && protocol != "data" {
 						continue
 					}
 				}
@@ -172,6 +172,19 @@ func cleanNode(c *Config, n *html.Node) *html.Node {
 			}
 
 			n.Attr = append(n.Attr, a)
+		}
+
+		if n.DataAtom == atom.Img {
+			haveSrc := false
+			for _, a := range n.Attr {
+				if a.Namespace == "" && a.Key == "src" {
+					haveSrc = true
+					break
+				}
+			}
+			if !haveSrc {
+				return &html.Node{Type: html.TextNode}
+			}
 		}
 
 		return n
