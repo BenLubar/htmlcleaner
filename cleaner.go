@@ -162,7 +162,7 @@ func cleanNode(c *Config, n *html.Node) *html.Node {
 			if !c.AllowJavascriptURL && (aatom == atom.Href || aatom == atom.Src || aatom == atom.Poster) {
 				if u, err := url.Parse(a.Val); err != nil {
 					continue
-				} else if u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "mailto" && u.Scheme != "data" {
+				} else if u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "mailto" && u.Scheme != "data" && u.Scheme != "" {
 					continue
 				} else if c.ValidateURL != nil && !c.ValidateURL(u) {
 					continue
