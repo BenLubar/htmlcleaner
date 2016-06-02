@@ -1,7 +1,11 @@
 package htmlcleaner
 
-import "regexp"
-import "golang.org/x/net/html/atom"
+import (
+	"net/url"
+	"regexp"
+
+	"golang.org/x/net/html/atom"
+)
 
 type Config struct {
 	// element => attribute => allowed
@@ -16,6 +20,9 @@ type Config struct {
 	// <img src> <video src> <audio src>, etc. If false, attributes with
 	// JavaScript URLs are removed.
 	AllowJavascriptURL bool
+
+	// A custom URL validation function, run if AllowJavascriptURL succeeds
+	ValidateURL func(*url.URL) bool
 
 	// If true, HTML comments are turned into text.
 	EscapeComments bool
@@ -85,6 +92,8 @@ var DefaultConfig = &Config{
 	},
 
 	AllowJavascriptURL: false,
+
+	ValidateURL: nil,
 
 	EscapeComments: false,
 

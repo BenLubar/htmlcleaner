@@ -2,6 +2,7 @@ package htmlcleaner
 
 import (
 	"bytes"
+	"net/url"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -159,11 +160,14 @@ func cleanNode(c *Config, n *html.Node) *html.Node {
 			}
 
 			if !c.AllowJavascriptURL && (aatom == atom.Href || aatom == atom.Src || aatom == atom.Poster) {
-				if i := strings.IndexRune(a.Val, ':'); i >= 0 && strings.IndexRune(a.Val[:i], '/') < 0 {
-					protocol := strings.ToLower(a.Val[:i])
-					if protocol != "http" && protocol != "https" && protocol != "mailto" && protocol != "data" {
-						continue
-					}
+				if u, err := url.Parse(a.Val); err != nil {
+					continue
+				} else if u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "mailto" && u.Scheme != "data" {
+					continue
+				} else if c.ValidateURL != nil && !c.ValidateURL(u) {
+					continue
+				} else {
+					a.Val = u.String()
 				}
 			}
 
