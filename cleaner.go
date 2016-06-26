@@ -9,9 +9,18 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// Convenience function that takes a string instead of an io.Reader and omits
-// deep trees.
+// DefaultMaxDepth is the default maximum depth of the node trees returned by
+// Parse.
+const DefaultMaxDepth = 100
+
+// Parse is a convenience wrapper that calls ParseDepth with DefaultMaxDepth.
 func Parse(fragment string) []*html.Node {
+	return ParseDepth(fragment, DefaultMaxDepth)
+}
+
+// ParseDepth is a convenience function that wraps html.ParseFragment but takes
+// a string instead of an io.Reader and omits deep trees.
+func ParseDepth(fragment string, maxDepth int) []*html.Node {
 	nodes, err := html.ParseFragment(strings.NewReader(fragment), &html.Node{
 		Type:     html.ElementNode,
 		Data:     "div",
@@ -23,13 +32,14 @@ func Parse(fragment string) []*html.Node {
 	}
 
 	for _, n := range nodes {
-		forceMaxDepth(n, 100)
+		forceMaxDepth(n, maxDepth)
 	}
 
 	return nodes
 }
 
-// Convenience function that writes a string instead of an io.Writer.
+// Render is a convenience function that wraps html.Render and renders to a
+// string instead of an io.Writer.
 func Render(nodes ...*html.Node) string {
 	var buf bytes.Buffer
 
@@ -49,6 +59,8 @@ func Clean(c *Config, fragment string) string {
 	return Render(CleanNodes(c, Parse(fragment))...)
 }
 
+// CleanNodes calls CleanNode on each node, and additionally wraps inline
+// elements in <p> tags and wraps dangling <li> tags in <ul> tags.
 func CleanNodes(c *Config, nodes []*html.Node) []*html.Node {
 	if c == nil {
 		c = DefaultConfig
@@ -57,22 +69,7 @@ func CleanNodes(c *Config, nodes []*html.Node) []*html.Node {
 	for i, n := range nodes {
 		nodes[i] = CleanNode(c, n)
 		if nodes[i].DataAtom == atom.Li {
-			wrapper := &html.Node{
-				Type:        html.ElementNode,
-				Data:        "ul",
-				DataAtom:    atom.Ul,
-				PrevSibling: nodes[i].PrevSibling,
-				NextSibling: nodes[i].NextSibling,
-			}
-			if wrapper.PrevSibling != nil {
-				wrapper.PrevSibling.NextSibling = wrapper
-			}
-			if wrapper.NextSibling != nil {
-				wrapper.NextSibling.PrevSibling = wrapper
-			}
-			nodes[i].Parent, nodes[i].PrevSibling, nodes[i].NextSibling = nil, nil, nil
-			wrapper.AppendChild(nodes[i])
-			nodes[i] = wrapper
+			nodes[i] = wrapElement(atom.Ul, nodes[i])
 		}
 	}
 
@@ -113,22 +110,41 @@ func CleanNodes(c *Config, nodes []*html.Node) []*html.Node {
 	return nodes
 }
 
+func wrapElement(a atom.Atom, node *html.Node) *html.Node {
+	wrapper := &html.Node{
+		Type:        html.ElementNode,
+		Data:        a.String(),
+		DataAtom:    a,
+		PrevSibling: node.PrevSibling,
+		NextSibling: node.NextSibling,
+	}
+	if wrapper.PrevSibling != nil {
+		wrapper.PrevSibling.NextSibling = wrapper
+	}
+	if wrapper.NextSibling != nil {
+		wrapper.NextSibling.PrevSibling = wrapper
+	}
+	node.Parent, node.PrevSibling, node.NextSibling = nil, nil, nil
+	wrapper.AppendChild(node)
+	return wrapper
+}
+
 func text(s string) *html.Node {
 	return &html.Node{Type: html.TextNode, Data: s}
 }
 
-// Clean an HTML node using the specified config. Doctype nodes and nodes that
-// have a specified namespace are converted to text. Text nodes, document nodes,
-// etc. are returned as-is. Element nodes are recursively checked for legality
-// and have their attributes checked for legality as well. Elements with illegal
-// attributes are copied and the problematic attributes are removed. Elements
-// that are not in the set of legal elements are replaced with a textual
-// version of their source code.
+// CleanNode cleans an HTML node using the specified config. Doctype nodes and
+// nodes that have a specified namespace are converted to text. Text nodes,
+// document nodes, etc. are returned as-is. Element nodes are recursively
+// checked for legality and have their attributes checked for legality as well.
+// Elements with illegal attributes are copied and the problematic attributes
+// are removed. Elements that are not in the set of legal elements are replaced
+// with a textual version of their source code.
 func CleanNode(c *Config, n *html.Node) *html.Node {
-	return cleanNode(c, n)
+	return filterNode(c, n)
 }
 
-func cleanNode(c *Config, n *html.Node) *html.Node {
+func filterNode(c *Config, n *html.Node) *html.Node {
 	if c == nil {
 		c = DefaultConfig
 	}
@@ -144,6 +160,10 @@ func cleanNode(c *Config, n *html.Node) *html.Node {
 	if n.Namespace != "" {
 		return text(Render(n))
 	}
+	return cleanNode(c, n)
+}
+
+func cleanNode(c *Config, n *html.Node) *html.Node {
 	if allowedAttr, ok := c.Elem[n.DataAtom]; ok {
 		// copy the node
 		tmp := *n
@@ -151,44 +171,32 @@ func cleanNode(c *Config, n *html.Node) *html.Node {
 
 		cleanChildren(c, n)
 
-		attr := n.Attr
-		n.Attr = make([]html.Attribute, 0, len(attr))
-		for _, a := range attr {
-			aatom := atom.Lookup([]byte(a.Key))
-			if a.Namespace != "" || (!allowedAttr[aatom] && !c.Attr[aatom]) {
+		haveSrc := false
+
+		attrs := n.Attr
+		n.Attr = make([]html.Attribute, 0, len(attrs))
+		for _, attr := range attrs {
+			a := atom.Lookup([]byte(attr.Key))
+			if attr.Namespace != "" || (!allowedAttr[a] && !c.Attr[a]) {
 				continue
 			}
 
-			if !c.AllowJavascriptURL && (aatom == atom.Href || aatom == atom.Src || aatom == atom.Poster) {
-				if u, err := url.Parse(a.Val); err != nil {
-					continue
-				} else if u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "mailto" && u.Scheme != "data" && u.Scheme != "" {
-					continue
-				} else if c.ValidateURL != nil && !c.ValidateURL(u) {
-					continue
-				} else {
-					a.Val = u.String()
-				}
-			}
-
-			if re, ok := c.AttrMatch[n.DataAtom][aatom]; ok && !re.MatchString(a.Val) {
+			if !c.AllowJavascriptURL && !cleanURL(c, a, &attr) {
 				continue
 			}
 
-			n.Attr = append(n.Attr, a)
+			if re, ok := c.AttrMatch[n.DataAtom][a]; ok && !re.MatchString(attr.Val) {
+				continue
+			}
+
+			haveSrc = haveSrc || a == atom.Src
+
+			n.Attr = append(n.Attr, attr)
 		}
 
-		if n.DataAtom == atom.Img {
-			haveSrc := false
-			for _, a := range n.Attr {
-				if a.Namespace == "" && a.Key == "src" {
-					haveSrc = true
-					break
-				}
-			}
-			if !haveSrc {
-				return &html.Node{Type: html.TextNode}
-			}
+		if n.DataAtom == atom.Img && !haveSrc {
+			// replace it with an empty text node
+			return &html.Node{Type: html.TextNode}
 		}
 
 		return n
@@ -196,10 +204,37 @@ func cleanNode(c *Config, n *html.Node) *html.Node {
 	return text(html.UnescapeString(Render(n)))
 }
 
+var allowedURLSchemes = map[string]bool{
+	"http":   true,
+	"https":  true,
+	"mailto": true,
+	"data":   true,
+	"":       true,
+}
+
+func cleanURL(c *Config, a atom.Atom, attr *html.Attribute) bool {
+	if a != atom.Href && a != atom.Src && a != atom.Poster {
+		return true
+	}
+
+	u, err := url.Parse(attr.Val)
+	if err != nil {
+		return false
+	}
+	if !allowedURLSchemes[u.Scheme] {
+		return false
+	}
+	if c.ValidateURL != nil && !c.ValidateURL(u) {
+		return false
+	}
+	attr.Val = u.String()
+	return true
+}
+
 func cleanChildren(c *Config, parent *html.Node) {
 	var children []*html.Node
 	for child := parent.FirstChild; child != nil; child = child.NextSibling {
-		children = append(children, cleanNode(c, child))
+		children = append(children, filterNode(c, child))
 	}
 
 	for i, child := range children {

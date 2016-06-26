@@ -7,6 +7,7 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
+// Config holds the settings for htmlcleaner.
 type Config struct {
 	// element => attribute => allowed
 	// if an element's attribute map exists, even if it is nil,
@@ -16,24 +17,25 @@ type Config struct {
 	// attribute => allowed (for all legal elements)
 	Attr map[atom.Atom]bool
 
+	// Attributes with these names must have matching values.
+	AttrMatch map[atom.Atom]map[atom.Atom]*regexp.Regexp
+
+	// A custom URL validation function, run if AllowJavascriptURL succeeds
+	ValidateURL func(*url.URL) bool
+
 	// If true, URLs starting with javascript: are allowed in <a href>
 	// <img src> <video src> <audio src>, etc. If false, attributes with
 	// JavaScript URLs are removed.
 	AllowJavascriptURL bool
-
-	// A custom URL validation function, run if AllowJavascriptURL succeeds
-	ValidateURL func(*url.URL) bool
 
 	// If true, HTML comments are turned into text.
 	EscapeComments bool
 
 	// Wrap text nodes in at least one tag.
 	WrapText bool
-
-	// Attributes with these names must have matching values.
-	AttrMatch map[atom.Atom]map[atom.Atom]*regexp.Regexp
 }
 
+// DefaultConfig is the default settings for htmlcleaner.
 var DefaultConfig = &Config{
 	Elem: map[atom.Atom]map[atom.Atom]bool{
 		atom.A: {
@@ -91,9 +93,11 @@ var DefaultConfig = &Config{
 		atom.Title: true,
 	},
 
-	AllowJavascriptURL: false,
+	AttrMatch: map[atom.Atom]map[atom.Atom]*regexp.Regexp{},
 
 	ValidateURL: nil,
+
+	AllowJavascriptURL: false,
 
 	EscapeComments: false,
 
