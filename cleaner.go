@@ -2,6 +2,8 @@ package htmlcleaner
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"net/url"
 	"strings"
 
@@ -12,6 +14,56 @@ import (
 // DefaultMaxDepth is the default maximum depth of the node trees returned by
 // Parse.
 const DefaultMaxDepth = 100
+
+// Preprocess escapes disallowed tags in a cleaner way, but does not fix
+// nesting problems. Use with Clean.
+func Preprocess(config *Config, fragment string) (string, error) {
+	if config == nil {
+		config = DefaultConfig
+	}
+
+	var buf bytes.Buffer
+
+	t := html.NewTokenizer(strings.NewReader(fragment))
+	for {
+		switch tok := t.Next(); tok {
+		case html.ErrorToken:
+			err := t.Err()
+			if err == io.EOF {
+				err = nil
+			}
+			return buf.String(), err
+		case html.TextToken:
+			if _, err := buf.Write(t.Raw()); err != nil {
+				return "", err
+			}
+		case html.StartTagToken, html.EndTagToken, html.SelfClosingTagToken:
+			raw := string(t.Raw())
+			tagName, _ := t.TagName()
+			tag := atom.Lookup(tagName)
+			if _, ok := config.Elem[tag]; !ok {
+				raw = html.EscapeString(raw)
+			}
+			if _, err := buf.WriteString(raw); err != nil {
+				return "", err
+			}
+		case html.CommentToken:
+			raw := string(t.Raw())
+			if config.EscapeComments {
+				raw = html.EscapeString(raw)
+			}
+			if _, err := buf.WriteString(raw); err != nil {
+				return "", err
+			}
+		case html.DoctypeToken:
+			if _, err := buf.WriteString(html.EscapeString(string(t.Raw()))); err != nil {
+				return "", err
+			}
+		default:
+			panic(fmt.Sprintf("htmlcleaner: unhandled token type: %d", tok))
+		}
+	}
+}
 
 // Parse is a convenience wrapper that calls ParseDepth with DefaultMaxDepth.
 func Parse(fragment string) []*html.Node {
