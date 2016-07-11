@@ -2,7 +2,6 @@ package htmlcleaner
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/url"
 	"strings"
@@ -17,26 +16,37 @@ const DefaultMaxDepth = 100
 
 // Preprocess escapes disallowed tags in a cleaner way, but does not fix
 // nesting problems. Use with Clean.
-func Preprocess(config *Config, fragment string) (string, error) {
+func Preprocess(config *Config, fragment string) string {
 	if config == nil {
 		config = DefaultConfig
 	}
 
 	var buf bytes.Buffer
+	write := func(raw string) {
+		_, err := buf.WriteString(raw)
+
+		// The only possible error is running out of memory.
+		expectError(err, nil)
+	}
 
 	t := html.NewTokenizer(strings.NewReader(fragment))
 	for {
 		switch tok := t.Next(); tok {
 		case html.ErrorToken:
 			err := t.Err()
+
+			// The only possible errors are from the Reader or from
+			// the buffer capacity being exceeded. Neither can
+			// happen with strings.NewReader as the string must
+			// already fit into memory.
+			expectError(err, io.EOF)
+
 			if err == io.EOF {
-				err = nil
+				write(html.EscapeString(string(t.Raw())))
+				return buf.String()
 			}
-			return buf.String(), err
 		case html.TextToken:
-			if _, err := buf.Write(t.Raw()); err != nil {
-				return "", err
-			}
+			write(string(t.Raw()))
 		case html.StartTagToken, html.EndTagToken, html.SelfClosingTagToken:
 			raw := string(t.Raw())
 			tagName, _ := t.TagName()
@@ -44,23 +54,15 @@ func Preprocess(config *Config, fragment string) (string, error) {
 			if _, ok := config.Elem[tag]; !ok {
 				raw = html.EscapeString(raw)
 			}
-			if _, err := buf.WriteString(raw); err != nil {
-				return "", err
-			}
+			write(raw)
 		case html.CommentToken:
 			raw := string(t.Raw())
-			if config.EscapeComments {
+			if config.EscapeComments || !strings.HasPrefix(raw, "<!--") || !strings.HasSuffix(raw, "-->") {
 				raw = html.EscapeString(raw)
 			}
-			if _, err := buf.WriteString(raw); err != nil {
-				return "", err
-			}
-		case html.DoctypeToken:
-			if _, err := buf.WriteString(html.EscapeString(string(t.Raw()))); err != nil {
-				return "", err
-			}
+			write(raw)
 		default:
-			panic(fmt.Sprintf("htmlcleaner: unhandled token type: %d", tok))
+			write(html.EscapeString(string(t.Raw())))
 		}
 	}
 }
@@ -78,13 +80,12 @@ func ParseDepth(fragment string, maxDepth int) []*html.Node {
 		Data:     "div",
 		DataAtom: atom.Div,
 	})
-	if err != nil {
-		// should never happen
-		panic(err)
-	}
+	expectError(err, nil)
 
-	for _, n := range nodes {
-		forceMaxDepth(n, maxDepth)
+	if maxDepth > 0 {
+		for _, n := range nodes {
+			forceMaxDepth(n, maxDepth)
+		}
 	}
 
 	return nodes
@@ -96,10 +97,8 @@ func Render(nodes ...*html.Node) string {
 	var buf bytes.Buffer
 
 	for _, n := range nodes {
-		if err := html.Render(&buf, n); err != nil {
-			// should never happen
-			panic(err)
-		}
+		err := html.Render(&buf, n)
+		expectError(err, nil)
 	}
 
 	return string(buf.Bytes())
@@ -111,6 +110,46 @@ func Clean(c *Config, fragment string) string {
 	return Render(CleanNodes(c, Parse(fragment))...)
 }
 
+var isBlockElement = map[atom.Atom]bool{
+	atom.Address:    true,
+	atom.Article:    true,
+	atom.Aside:      true,
+	atom.Blockquote: true,
+	atom.Center:     true,
+	atom.Dd:         true,
+	atom.Details:    true,
+	atom.Dir:        true,
+	atom.Div:        true,
+	atom.Dl:         true,
+	atom.Dt:         true,
+	atom.Fieldset:   true,
+	atom.Figcaption: true,
+	atom.Figure:     true,
+	atom.Footer:     true,
+	atom.Form:       true,
+	atom.H1:         true,
+	atom.H2:         true,
+	atom.H3:         true,
+	atom.H4:         true,
+	atom.H5:         true,
+	atom.H6:         true,
+	atom.Header:     true,
+	atom.Hgroup:     true,
+	atom.Hr:         true,
+	atom.Li:         true,
+	atom.Listing:    true,
+	atom.Menu:       true,
+	atom.Nav:        true,
+	atom.Ol:         true,
+	atom.P:          true,
+	atom.Plaintext:  true,
+	atom.Pre:        true,
+	atom.Section:    true,
+	atom.Summary:    true,
+	atom.Table:      true,
+	atom.Ul:         true,
+}
+
 // CleanNodes calls CleanNode on each node, and additionally wraps inline
 // elements in <p> tags and wraps dangling <li> tags in <ul> tags.
 func CleanNodes(c *Config, nodes []*html.Node) []*html.Node {
@@ -119,26 +158,34 @@ func CleanNodes(c *Config, nodes []*html.Node) []*html.Node {
 	}
 
 	for i, n := range nodes {
-		nodes[i] = CleanNode(c, n)
+		nodes[i] = filterNode(c, n)
 		if nodes[i].DataAtom == atom.Li {
-			nodes[i] = wrapElement(atom.Ul, nodes[i])
+			wrapper := &html.Node{
+				Type:     html.ElementNode,
+				Data:     "ul",
+				DataAtom: atom.Ul,
+			}
+			nodes[i].Parent = nil
+			wrapper.AppendChild(nodes[i])
+			nodes[i] = wrapper
 		}
 	}
 
 	if c.WrapText {
 		wrapped := make([]*html.Node, 0, len(nodes))
 		var wrapper *html.Node
+		appendWrapper := func() {
+			if wrapper != nil {
+				// render and re-parse so p-inline-p expands
+				wrapped = append(wrapped, ParseDepth(Render(wrapper), 0)...)
+				wrapper = nil
+			}
+		}
 		for _, n := range nodes {
-			if n.Type == html.ElementNode {
-				switch n.DataAtom {
-				case atom.Address, atom.Article, atom.Aside, atom.Blockquote, atom.Center, atom.Dd, atom.Details, atom.Dir, atom.Div, atom.Dl, atom.Dt, atom.Fieldset, atom.Figcaption, atom.Figure, atom.Footer, atom.Form, atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6, atom.Header, atom.Hgroup, atom.Hr, atom.Li, atom.Listing, atom.Menu, atom.Nav, atom.Ol, atom.P, atom.Plaintext, atom.Pre, atom.Section, atom.Summary, atom.Table, atom.Ul:
-					if wrapper != nil {
-						wrapped = append(wrapped, wrapper)
-						wrapper = nil
-					}
-					wrapped = append(wrapped, n)
-					continue
-				}
+			if n.Type == html.ElementNode && isBlockElement[n.DataAtom] {
+				appendWrapper()
+				wrapped = append(wrapped, n)
+				continue
 			}
 			if wrapper == nil && n.Type == html.TextNode && strings.TrimSpace(n.Data) == "" {
 				wrapped = append(wrapped, n)
@@ -151,65 +198,41 @@ func CleanNodes(c *Config, nodes []*html.Node) []*html.Node {
 					DataAtom: atom.P,
 				}
 			}
+
 			wrapper.AppendChild(n)
 		}
-		if wrapper != nil {
-			wrapped = append(wrapped, wrapper)
-		}
+		appendWrapper()
 		nodes = wrapped
 	}
 
 	return nodes
 }
 
-func wrapElement(a atom.Atom, node *html.Node) *html.Node {
-	wrapper := &html.Node{
-		Type:        html.ElementNode,
-		Data:        a.String(),
-		DataAtom:    a,
-		PrevSibling: node.PrevSibling,
-		NextSibling: node.NextSibling,
-	}
-	if wrapper.PrevSibling != nil {
-		wrapper.PrevSibling.NextSibling = wrapper
-	}
-	if wrapper.NextSibling != nil {
-		wrapper.NextSibling.PrevSibling = wrapper
-	}
-	node.Parent, node.PrevSibling, node.NextSibling = nil, nil, nil
-	wrapper.AppendChild(node)
-	return wrapper
-}
-
 func text(s string) *html.Node {
 	return &html.Node{Type: html.TextNode, Data: s}
 }
 
-// CleanNode cleans an HTML node using the specified config. Doctype nodes and
-// nodes that have a specified namespace are converted to text. Text nodes,
-// document nodes, etc. are returned as-is. Element nodes are recursively
-// checked for legality and have their attributes checked for legality as well.
-// Elements with illegal attributes are copied and the problematic attributes
-// are removed. Elements that are not in the set of legal elements are replaced
-// with a textual version of their source code.
+// CleanNode cleans an HTML node using the specified config. Text nodes are
+// returned as-is. Element nodes are recursively  checked for legality and have
+// their attributes checked for legality as well. Elements with illegal
+// attributes are copied and the problematic attributes are removed. Elements
+// that are not in the set of legal elements are replaced with a textual
+// version of their source code.
 func CleanNode(c *Config, n *html.Node) *html.Node {
+	if c == nil {
+		c = DefaultConfig
+	}
 	return filterNode(c, n)
 }
 
 func filterNode(c *Config, n *html.Node) *html.Node {
-	if c == nil {
-		c = DefaultConfig
-	}
-	if n.Type == html.DoctypeNode {
-		return text(Render(n))
-	}
-	if n.Type == html.CommentNode && c.EscapeComments {
-		return text(Render(n))
-	}
-	if n.Type != html.ElementNode {
+	if n.Type == html.TextNode {
 		return n
 	}
-	if n.Namespace != "" {
+	if n.Type == html.CommentNode && !c.EscapeComments {
+		return n
+	}
+	if n.Type != html.ElementNode {
 		return text(Render(n))
 	}
 	return cleanNode(c, n)
@@ -310,6 +333,9 @@ func forceMaxDepth(n *html.Node, depth int) {
 		n.FirstChild, n.LastChild = nil, nil
 		n.Attr = nil
 		n.Data = "[omitted]"
+		for n.NextSibling != nil {
+			n.Parent.RemoveChild(n.NextSibling)
+		}
 		return
 	}
 
@@ -319,5 +345,11 @@ func forceMaxDepth(n *html.Node, depth int) {
 
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		forceMaxDepth(c, depth-1)
+	}
+}
+
+func expectError(err, expected error) {
+	if err != expected {
+		panic("htmlcleaner: unexpected error: " + err.Error())
 	}
 }
