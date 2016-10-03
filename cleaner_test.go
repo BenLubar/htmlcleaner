@@ -8,99 +8,94 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-var testTableClean = []struct {
+type testTable struct {
+	Name   string
 	Input  string
 	Output string
 	Config *Config
-}{
-	{``, ``, nil},
-	{`a`, `a`, nil},
-	{`<a`, ``, nil},
-	{`a<`, `a&lt;`, nil},
-	{`<a href http://golang.org>`, `<a href=""></a>`, nil},
-	{`<a href="http://golang.org">Go`, `<a href="http://golang.org">Go</a>`, nil},
-	{`<a href="http://golang.org">Go</a></a>`, `<a href="http://golang.org">Go</a>`, nil},
-	{`<a href="javascript:malicious()">`, `<a></a>`, nil},
-	{`<b><i>hello</b></i>`, `<b><i>hello</i></b>`, nil},
-	{`<b><i>hello</b></i> <u>there`, `<b><i>hello</i></b> <u>there</u>`, nil},
-	{`<img href alt></img>`, ``, nil},
-	{`<p><p><p><p>`, `<p></p><p></p><p></p><p></p>`, nil},
-	{`<script>foo.bar < baz</script>`, `&lt;script&gt;foo.bar &lt; baz&lt;/script&gt;`, nil},
-	{`&`, `&amp;`, nil},
-	{`&amp;`, `&amp;`, nil},
-	{`<invalidtag>&#34;</invalidtag>`, `&lt;invalidtag&gt;&#34;&lt;/invalidtag&gt;`, nil},
-	{`<li>`, `<ul><li></li></ul>`, &Config{Elem: map[atom.Atom]map[atom.Atom]bool{atom.Ul: nil, atom.Li: nil}}},
-	{`<a href="https://www.%google.com">google</a>`, `<a>google</a>`, nil},
-	{`<a href="https://www.%google.com">google</a>`, `<p><a>google</a></p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
-	{`foo>bar`, `foo&gt;bar`, nil},
-	{`>bar`, `&gt;bar`, nil},
-	{`foo>`, `foo&gt;`, nil},
-	{`<!--comment-->`, `<!--comment-->`, nil},
-	{`<!--comment-->`, `&lt;!--comment--&gt;`, &Config{EscapeComments: true}},
-	{`<![CDATA[ foo ]]>`, `<!--[CDATA[ foo ]]-->`, nil},
-	{`<![CDATA[ foo ]]>`, `&lt;!--[CDATA[ foo ]]--&gt;`, &Config{EscapeComments: true}},
-	{`<?xml version="1.0"?>`, `<!--?xml version="1.0"?-->`, nil},
-	{`<?xml version="1.0"?>`, `&lt;!--?xml version=&#34;1.0&#34;?--&gt;`, &Config{EscapeComments: true}},
-	{`<!DOCTYPE html>`, ``, nil},
-	{`<!DOCTYPE html>`, ``, &Config{EscapeComments: true}},
-	{`<?php echo mysql_real_escape_string('foo'); ?>`, `<!--?php echo mysql_real_escape_string('foo'); ?-->`, nil},
-	{`<?php echo mysql_real_escape_string('foo'); ?>`, `&lt;!--?php echo mysql_real_escape_string(&#39;foo&#39;); ?--&gt;`, &Config{EscapeComments: true}},
-	{strings.Repeat(`<small>a `, 250), strings.Repeat(`<small>a `, 99) + "<small>[omitted]" + strings.Repeat(`</small>`, 100), nil},
-	{`hello <em>world`, `<p>hello <em>world</em></p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
-	{`<p>hello</p> <p>world</p>`, `<p>hello</p> <p>world</p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
-	{`<em>hello <p>world</p>`, `<p><em>hello </em></p><p><em>world</em></p><p></p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
+}
+
+func doTableTest(f func(*Config, string) string, t *testing.T, table []testTable) {
+	for _, tt := range table {
+		t.Run(tt.Name, func(t *testing.T) {
+			actual, expected := f(tt.Config, tt.Input), tt.Output
+
+			if actual != expected {
+				t.Logf("expected %q", expected)
+				t.Logf("actual   %q", actual)
+				t.Fatal("expected != actual")
+			}
+		})
+	}
+}
+
+var testTableClean = []testTable{
+	{"Empty", ``, ``, nil},
+	{"PlainText", `a`, `a`, nil},
+	{"UnterminatedOpenTag", `<a`, ``, nil},
+	{"LessThanAtEnd", `a<`, `a&lt;`, nil},
+	{"LinkMissingPunctuation", `<a href http://golang.org>`, `<a href=""></a>`, nil},
+	{"LinkMissingClosingTag", `<a href="http://golang.org">Go`, `<a href="http://golang.org">Go</a>`, nil},
+	{"LinkTwoClosingTags", `<a href="http://golang.org">Go</a></a>`, `<a href="http://golang.org">Go</a>`, nil},
+	{"LinkJavaScript", `<a href="javascript:malicious()">`, `<a></a>`, nil},
+	{"InvalidNesting", `<b><i>hello</b></i>`, `<b><i>hello</i></b>`, nil},
+	{"InvalidNestingUnclosed", `<b><i>hello</b></i> <u>there`, `<b><i>hello</i></b> <u>there</u>`, nil},
+	{"ImageInvalid", `<img href alt></img>`, ``, nil},
+	{"FourParagraphs", `<p><p><p><p>`, `<p></p><p></p><p></p><p></p>`, nil},
+	{"ScriptLessThan", `<script>foo.bar < baz</script>`, `&lt;script&gt;foo.bar &lt; baz&lt;/script&gt;`, nil},
+	{"Ampersand", `&`, `&amp;`, nil},
+	{"AmpersandEntity", `&amp;`, `&amp;`, nil},
+	{"InvalidTagEntity", `<invalidtag>&#34;</invalidtag>`, `&lt;invalidtag&gt;&#34;&lt;/invalidtag&gt;`, nil},
+	{"StrayListItem", `<li>`, `<ul><li></li></ul>`, &Config{Elem: map[atom.Atom]map[atom.Atom]bool{atom.Ul: nil, atom.Li: nil}}},
+	{"LinkPercent", `<a href="https://www.%google.com">google</a>`, `<a>google</a>`, nil},
+	{"LinkPercentWrap", `<a href="https://www.%google.com">google</a>`, `<p><a>google</a></p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
+	{"GreaterThanInfix", `foo>bar`, `foo&gt;bar`, nil},
+	{"GreaterThanPrefix", `>bar`, `&gt;bar`, nil},
+	{"GreaterThanSuffix", `foo>`, `foo&gt;`, nil},
+	{"Comment", `<!--comment-->`, `<!--comment-->`, nil},
+	{"CommentEscaped", `<!--comment-->`, `&lt;!--comment--&gt;`, &Config{EscapeComments: true}},
+	{"CDATA", `<![CDATA[ foo ]]>`, `<!--[CDATA[ foo ]]-->`, nil},
+	{"CDATAEscaped", `<![CDATA[ foo ]]>`, `&lt;!--[CDATA[ foo ]]--&gt;`, &Config{EscapeComments: true}},
+	{"XML", `<?xml version="1.0"?>`, `<!--?xml version="1.0"?-->`, nil},
+	{"XMLEscaped", `<?xml version="1.0"?>`, `&lt;!--?xml version=&#34;1.0&#34;?--&gt;`, &Config{EscapeComments: true}},
+	{"Doctype", `<!DOCTYPE html>`, ``, nil},
+	{"DoctypeEscaped", `<!DOCTYPE html>`, ``, &Config{EscapeComments: true}},
+	{"PHP", `<?php echo mysql_real_escape_string('foo'); ?>`, `<!--?php echo mysql_real_escape_string('foo'); ?-->`, nil},
+	{"PHPEscaped", `<?php echo mysql_real_escape_string('foo'); ?>`, `&lt;!--?php echo mysql_real_escape_string(&#39;foo&#39;); ?--&gt;`, &Config{EscapeComments: true}},
+	{"Small250", strings.Repeat(`<small>a `, 250), strings.Repeat(`<small>a `, 99) + "<small>[omitted]" + strings.Repeat(`</small>`, 100), nil},
+	{"WrapUnclosed", `hello <em>world`, `<p>hello <em>world</em></p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
+	{"WrapStraySpace", `<p>hello</p> <p>world</p>`, `<p>hello</p> <p>world</p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
+	{"WrapInvalidNesting", `<em>hello <p>world</p>`, `<p><em>hello </em></p><p><em>world</em></p><p></p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
 }
 
 func TestClean(t *testing.T) {
-	for i, tt := range testTableClean {
-		actual, expected := Clean(tt.Config, tt.Input), tt.Output
-
-		if actual != expected {
-			t.Logf("%d is %+v", i, tt)
-			t.Logf("%d: expected %q", i, expected)
-			t.Logf("%d: actual   %q", i, actual)
-			t.Errorf("%d: expected != actual", i)
-		}
-	}
+	doTableTest(Clean, t, testTableClean)
 }
 
-var testTablePreprocess = []struct {
-	Input  string
-	Output string
-	Config *Config
-}{
-	{``, ``, nil},
-	{`a`, `a`, nil},
-	{`<insert text here>`, `&lt;insert text here&gt;`, nil},
-	{`foo<bar`, `foo&lt;bar`, nil},
-	{`<bar`, `&lt;bar`, nil},
-	{`foo<`, `foo<`, nil},
-	{`foo>bar`, `foo>bar`, nil},
-	{`>bar`, `>bar`, nil},
-	{`foo>`, `foo>`, nil},
-	{`<!--comment-->`, `<!--comment-->`, nil},
-	{`<!--comment-->`, `&lt;!--comment--&gt;`, &Config{EscapeComments: true}},
-	{`<![CDATA[ foo ]]>`, `&lt;![CDATA[ foo ]]&gt;`, nil},
-	{`<![CDATA[ foo ]]>`, `&lt;![CDATA[ foo ]]&gt;`, &Config{EscapeComments: true}},
-	{`<?xml version="1.0"?>`, `&lt;?xml version=&#34;1.0&#34;?&gt;`, nil},
-	{`<?xml version="1.0"?>`, `&lt;?xml version=&#34;1.0&#34;?&gt;`, &Config{EscapeComments: true}},
-	{`<!DOCTYPE html>`, `&lt;!DOCTYPE html&gt;`, nil},
-	{`<!DOCTYPE html>`, `&lt;!DOCTYPE html&gt;`, &Config{EscapeComments: true}},
-	{`<?php echo mysql_real_escape_string('foo'); ?>`, `&lt;?php echo mysql_real_escape_string(&#39;foo&#39;); ?&gt;`, nil},
-	{`<?php echo mysql_real_escape_string('foo'); ?>`, `&lt;?php echo mysql_real_escape_string(&#39;foo&#39;); ?&gt;`, &Config{EscapeComments: true}},
+var testTablePreprocess = []testTable{
+	{"Empty", ``, ``, nil},
+	{"NoMarkup", `a`, `a`, nil},
+	{"NonHTML", `<insert text here>`, `&lt;insert text here&gt;`, nil},
+	{"LessThanInfix", `foo<bar`, `foo&lt;bar`, nil},
+	{"LessThanPrefix", `<bar`, `&lt;bar`, nil},
+	{"LessThanSuffix", `foo<`, `foo<`, nil},
+	{"GreaterThanInfix", `foo>bar`, `foo>bar`, nil},
+	{"GreaterThanPrefix", `>bar`, `>bar`, nil},
+	{"GreaterThanSuffix", `foo>`, `foo>`, nil},
+	{"Comment", `<!--comment-->`, `<!--comment-->`, nil},
+	{"CommentEscape", `<!--comment-->`, `&lt;!--comment--&gt;`, &Config{EscapeComments: true}},
+	{"CDATA", `<![CDATA[ foo ]]>`, `&lt;![CDATA[ foo ]]&gt;`, nil},
+	{"CDATAEscape", `<![CDATA[ foo ]]>`, `&lt;![CDATA[ foo ]]&gt;`, &Config{EscapeComments: true}},
+	{"XML", `<?xml version="1.0"?>`, `&lt;?xml version=&#34;1.0&#34;?&gt;`, nil},
+	{"XMLEscape", `<?xml version="1.0"?>`, `&lt;?xml version=&#34;1.0&#34;?&gt;`, &Config{EscapeComments: true}},
+	{"Doctype", `<!DOCTYPE html>`, `&lt;!DOCTYPE html&gt;`, nil},
+	{"DoctypeEscape", `<!DOCTYPE html>`, `&lt;!DOCTYPE html&gt;`, &Config{EscapeComments: true}},
+	{"PHP", `<?php echo mysql_real_escape_string('foo'); ?>`, `&lt;?php echo mysql_real_escape_string(&#39;foo&#39;); ?&gt;`, nil},
+	{"PHPEscape", `<?php echo mysql_real_escape_string('foo'); ?>`, `&lt;?php echo mysql_real_escape_string(&#39;foo&#39;); ?&gt;`, &Config{EscapeComments: true}},
 }
 
 func TestPreprocess(t *testing.T) {
-	for i, tt := range testTablePreprocess {
-		actual, expected := Preprocess(tt.Config, tt.Input), tt.Output
-
-		if actual != expected {
-			t.Logf("%d is %+v", i, tt)
-			t.Logf("%d: expected %q", i, expected)
-			t.Logf("%d: actual   %q", i, actual)
-			t.Errorf("%d: expected != actual", i)
-		}
-	}
+	doTableTest(Preprocess, t, testTablePreprocess)
 }
 
 func TestExpectError(t *testing.T) {
