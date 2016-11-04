@@ -50,8 +50,18 @@ func Preprocess(config *Config, fragment string) string {
 		case html.StartTagToken, html.EndTagToken, html.SelfClosingTagToken:
 			raw := string(t.Raw())
 			tagName, _ := t.TagName()
-			tag := atom.Lookup(tagName)
-			if _, ok := config.Elem[tag]; !ok {
+			allowed := false
+			if tag := atom.Lookup(tagName); tag != 0 {
+				if _, ok := config.elem[tag]; ok {
+					allowed = true
+				}
+			}
+			if !allowed {
+				if _, ok := config.elemCustom[string(tagName)]; ok {
+					allowed = true
+				}
+			}
+			if !allowed {
 				raw = html.EscapeString(raw)
 			}
 			write(raw)
@@ -239,7 +249,9 @@ func filterNode(c *Config, n *html.Node) *html.Node {
 }
 
 func cleanNode(c *Config, n *html.Node) *html.Node {
-	if allowedAttr, ok := c.Elem[n.DataAtom]; ok {
+	allowedAttr, ok1 := c.elem[n.DataAtom]
+	customAttr, ok2 := c.elemCustom[n.Data]
+	if ok1 || ok2 {
 		// copy the node
 		tmp := *n
 		n = &tmp
@@ -252,15 +264,24 @@ func cleanNode(c *Config, n *html.Node) *html.Node {
 		n.Attr = make([]html.Attribute, 0, len(attrs))
 		for _, attr := range attrs {
 			a := atom.Lookup([]byte(attr.Key))
-			if attr.Namespace != "" || (!allowedAttr[a] && !c.Attr[a]) {
+
+			re1, ok1 := allowedAttr[a]
+			re2, ok2 := customAttr[attr.Key]
+			_, ok3 := c.attr[a]
+			_, ok4 := c.attrCustom[attr.Key]
+
+			if attr.Namespace != "" || (!ok1 && !ok2 && !ok3 && !ok4) {
 				continue
 			}
 
-			if !c.AllowJavascriptURL && !cleanURL(c, a, &attr) {
+			if !cleanURL(c, a, &attr) {
 				continue
 			}
 
-			if re, ok := c.AttrMatch[n.DataAtom][a]; ok && !re.MatchString(attr.Val) {
+			if re1 != nil && !re1.MatchString(attr.Val) {
+				continue
+			}
+			if re2 != nil && !re2.MatchString(attr.Val) {
 				continue
 			}
 
@@ -287,6 +308,12 @@ var allowedURLSchemes = map[string]bool{
 	"":       true,
 }
 
+// SafeURLScheme returns true if u.Scheme is http, https, mailto, data, or an
+// empty string.
+func SafeURLScheme(u *url.URL) bool {
+	return allowedURLSchemes[u.Scheme]
+}
+
 func cleanURL(c *Config, a atom.Atom, attr *html.Attribute) bool {
 	if a != atom.Href && a != atom.Src && a != atom.Poster {
 		return true
@@ -294,9 +321,6 @@ func cleanURL(c *Config, a atom.Atom, attr *html.Attribute) bool {
 
 	u, err := url.Parse(attr.Val)
 	if err != nil {
-		return false
-	}
-	if !allowedURLSchemes[u.Scheme] {
 		return false
 	}
 	if c.ValidateURL != nil && !c.ValidateURL(u) {

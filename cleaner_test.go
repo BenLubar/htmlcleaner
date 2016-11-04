@@ -29,6 +29,14 @@ func doTableTest(f func(*Config, string) string, t *testing.T, table []testTable
 	}
 }
 
+var wrapConfig = func() *Config {
+	c := *DefaultConfig
+
+	c.WrapText = true
+
+	return &c
+}()
+
 var testTableClean = []testTable{
 	{"Empty", ``, ``, nil},
 	{"PlainText", `a`, `a`, nil},
@@ -46,9 +54,9 @@ var testTableClean = []testTable{
 	{"Ampersand", `&`, `&amp;`, nil},
 	{"AmpersandEntity", `&amp;`, `&amp;`, nil},
 	{"InvalidTagEntity", `<invalidtag>&#34;</invalidtag>`, `&lt;invalidtag&gt;&#34;&lt;/invalidtag&gt;`, nil},
-	{"StrayListItem", `<li>`, `<ul><li></li></ul>`, &Config{Elem: map[atom.Atom]map[atom.Atom]bool{atom.Ul: nil, atom.Li: nil}}},
+	{"StrayListItem", `<li>`, `<ul><li></li></ul>`, (&Config{}).ElemAtom(atom.Ul, atom.Li)},
 	{"LinkPercent", `<a href="https://www.%google.com">google</a>`, `<a>google</a>`, nil},
-	{"LinkPercentWrap", `<a href="https://www.%google.com">google</a>`, `<p><a>google</a></p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
+	{"LinkPercentWrap", `<a href="https://www.%google.com">google</a>`, `<p><a>google</a></p>`, wrapConfig},
 	{"GreaterThanInfix", `foo>bar`, `foo&gt;bar`, nil},
 	{"GreaterThanPrefix", `>bar`, `&gt;bar`, nil},
 	{"GreaterThanSuffix", `foo>`, `foo&gt;`, nil},
@@ -63,9 +71,9 @@ var testTableClean = []testTable{
 	{"PHP", `<?php echo mysql_real_escape_string('foo'); ?>`, `<!--?php echo mysql_real_escape_string('foo'); ?-->`, nil},
 	{"PHPEscaped", `<?php echo mysql_real_escape_string('foo'); ?>`, `&lt;!--?php echo mysql_real_escape_string(&#39;foo&#39;); ?--&gt;`, &Config{EscapeComments: true}},
 	{"Small250", strings.Repeat(`<small>a `, 250), strings.Repeat(`<small>a `, 99) + "<small>[omitted]" + strings.Repeat(`</small>`, 100), nil},
-	{"WrapUnclosed", `hello <em>world`, `<p>hello <em>world</em></p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
-	{"WrapStraySpace", `<p>hello</p> <p>world</p>`, `<p>hello</p> <p>world</p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
-	{"WrapInvalidNesting", `<em>hello <p>world</p>`, `<p><em>hello </em></p><p><em>world</em></p><p></p>`, &Config{Elem: DefaultConfig.Elem, WrapText: true}},
+	{"WrapUnclosed", `hello <em>world`, `<p>hello <em>world</em></p>`, wrapConfig},
+	{"WrapStraySpace", `<p>hello</p> <p>world</p>`, `<p>hello</p> <p>world</p>`, wrapConfig},
+	{"WrapInvalidNesting", `<em>hello <p>world</p>`, `<p><em>hello </em></p><p><em>world</em></p><p></p>`, wrapConfig},
 }
 
 func TestClean(t *testing.T) {

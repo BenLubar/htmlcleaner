@@ -9,24 +9,15 @@ import (
 
 // Config holds the settings for htmlcleaner.
 type Config struct {
-	// element => attribute => allowed
-	// if an element's attribute map exists, even if it is nil,
-	// the element is legal.
-	Elem map[atom.Atom]map[atom.Atom]bool
+	elem       map[atom.Atom]map[atom.Atom]*regexp.Regexp
+	attr       map[atom.Atom]struct{}
+	elemCustom map[string]map[string]*regexp.Regexp
+	attrCustom map[string]struct{}
 
-	// attribute => allowed (for all legal elements)
-	Attr map[atom.Atom]bool
-
-	// Attributes with these names must have matching values.
-	AttrMatch map[atom.Atom]map[atom.Atom]*regexp.Regexp
-
-	// A custom URL validation function, run if AllowJavascriptURL succeeds
+	// A custom URL validation function. If it is set and returns false,
+	// the attribute will be removed. Called for attributes such as src
+	// and href.
 	ValidateURL func(*url.URL) bool
-
-	// If true, URLs starting with javascript: are allowed in <a href>
-	// <img src> <video src> <audio src>, etc. If false, attributes with
-	// JavaScript URLs are removed.
-	AllowJavascriptURL bool
 
 	// If true, HTML comments are turned into text.
 	EscapeComments bool
@@ -35,71 +26,148 @@ type Config struct {
 	WrapText bool
 }
 
-// DefaultConfig is the default settings for htmlcleaner.
-var DefaultConfig = &Config{
-	Elem: map[atom.Atom]map[atom.Atom]bool{
-		atom.A: {
-			atom.Href: true,
-		},
-		atom.Img: {
-			atom.Src: true,
-			atom.Alt: true,
-		},
-		atom.Video: {
-			atom.Src:      true,
-			atom.Poster:   true,
-			atom.Controls: true,
-		},
-		atom.Audio: {
-			atom.Src:      true,
-			atom.Controls: true,
-		},
+// Elem ensures an element name is allowed. The receiver is returned to
+// allow call chaining.
+func (c *Config) Elem(names ...string) *Config {
+	for _, name := range names {
+		if a := atom.Lookup([]byte(name)); a != 0 {
+			c.ElemAtom(a)
+			continue
+		}
 
-		atom.B: nil,
-		atom.I: nil,
-		atom.U: nil,
-		atom.S: nil,
+		if c.elemCustom == nil {
+			c.elemCustom = make(map[string]map[string]*regexp.Regexp)
+		}
 
-		atom.Em:     nil,
-		atom.Strong: nil,
-		atom.Strike: nil,
+		if _, ok := c.elemCustom[name]; !ok {
+			c.elemCustom[name] = nil
+		}
+	}
 
-		atom.Big:   nil,
-		atom.Small: nil,
-		atom.Sup:   nil,
-		atom.Sub:   nil,
-
-		atom.Ins: nil,
-		atom.Del: nil,
-
-		atom.Abbr:    nil,
-		atom.Address: nil,
-		atom.Cite:    nil,
-		atom.Q:       nil,
-
-		atom.P:          nil,
-		atom.Blockquote: nil,
-
-		atom.Pre:  nil,
-		atom.Code: nil,
-		atom.Kbd:  nil,
-		atom.Tt:   nil,
-
-		atom.Details: nil,
-		atom.Summary: nil,
-	},
-
-	Attr: map[atom.Atom]bool{
-		atom.Title: true,
-	},
-
-	AttrMatch: map[atom.Atom]map[atom.Atom]*regexp.Regexp{},
-
-	ValidateURL: nil,
-
-	AllowJavascriptURL: false,
-
-	EscapeComments: false,
-
-	WrapText: false,
+	return c
 }
+
+// ElemAtom ensures an element name is allowed. The receiver is returned to
+// allow call chaining.
+func (c *Config) ElemAtom(elem ...atom.Atom) *Config {
+	if c.elem == nil {
+		c.elem = make(map[atom.Atom]map[atom.Atom]*regexp.Regexp)
+	}
+
+	for _, a := range elem {
+		if _, ok := c.elem[a]; !ok {
+			c.elem[a] = nil
+		}
+	}
+
+	return c
+}
+
+// GlobalAttr allows an attribute name on all allowed elements. The
+// receiver is returned to allow call chaining.
+func (c *Config) GlobalAttr(names ...string) *Config {
+	for _, name := range names {
+		if a := atom.Lookup([]byte(name)); a != 0 {
+			c.GlobalAttrAtom(a)
+			continue
+		}
+
+		if c.attrCustom == nil {
+			c.attrCustom = make(map[string]struct{})
+		}
+
+		c.attrCustom[name] = struct{}{}
+	}
+
+	return c
+}
+
+// GlobalAttrAtom allows an attribute name on all allowed elements. The
+// receiver is returned to allow call chaining.
+func (c *Config) GlobalAttrAtom(a atom.Atom) *Config {
+	if c.attr == nil {
+		c.attr = make(map[atom.Atom]struct{})
+	}
+
+	c.attr[a] = struct{}{}
+
+	return c
+}
+
+// ElemAttr allows an attribute name on the specified element. The
+// receiver is returned to allow call chaining.
+func (c *Config) ElemAttr(elem string, attr ...string) *Config {
+	for _, a := range attr {
+		c.ElemAttrMatch(elem, a, nil)
+	}
+	return c
+}
+
+// ElemAttrAtom allows an attribute name on the specified element. The
+// receiver is returned to allow call chaining.
+func (c *Config) ElemAttrAtom(elem atom.Atom, attr ...atom.Atom) *Config {
+	for _, a := range attr {
+		c.ElemAttrAtomMatch(elem, a, nil)
+	}
+	return c
+}
+
+// ElemAttrMatch allows an attribute name on the specified element, but
+// only if the value matches a regular expression. The receiver is returned to
+// allow call chaining.
+func (c *Config) ElemAttrMatch(elem, attr string, match *regexp.Regexp) *Config {
+	if e, a := atom.Lookup([]byte(elem)), atom.Lookup([]byte(attr)); e != 0 && a != 0 {
+		return c.ElemAttrAtomMatch(e, a, match)
+	}
+
+	if c.elemCustom == nil {
+		c.elemCustom = make(map[string]map[string]*regexp.Regexp)
+	}
+
+	attrs := c.elemCustom[elem]
+	if attrs == nil {
+		attrs = make(map[string]*regexp.Regexp)
+		c.elemCustom[elem] = attrs
+	}
+
+	attrs[attr] = match
+
+	return c
+}
+
+// ElemAttrAtomMatch allows an attribute name on the specified element,
+// but only if the value matches a regular expression. The receiver is returned
+// to allow call chaining.
+func (c *Config) ElemAttrAtomMatch(elem, attr atom.Atom, match *regexp.Regexp) *Config {
+	if c.elem == nil {
+		c.elem = make(map[atom.Atom]map[atom.Atom]*regexp.Regexp)
+	}
+
+	attrs := c.elem[elem]
+	if attrs == nil {
+		attrs = make(map[atom.Atom]*regexp.Regexp)
+		c.elem[elem] = attrs
+	}
+
+	attrs[attr] = match
+
+	return c
+}
+
+// DefaultConfig is the default settings for htmlcleaner.
+var DefaultConfig = (&Config{
+	ValidateURL: SafeURLScheme,
+}).GlobalAttrAtom(atom.Title).
+	ElemAttrAtom(atom.A, atom.Href).
+	ElemAttrAtom(atom.Img, atom.Src, atom.Alt).
+	ElemAttrAtom(atom.Video, atom.Src, atom.Poster, atom.Controls).
+	ElemAttrAtom(atom.Audio, atom.Src, atom.Controls).
+	ElemAtom(atom.B, atom.I, atom.U, atom.S).
+	ElemAtom(atom.Em, atom.Strong, atom.Strike).
+	ElemAtom(atom.Big, atom.Small, atom.Sup, atom.Sub).
+	ElemAtom(atom.Ins, atom.Del).
+	ElemAtom(atom.Abbr, atom.Address, atom.Cite, atom.Q).
+	ElemAtom(atom.P, atom.Blockquote, atom.Pre).
+	ElemAtom(atom.Code, atom.Kbd, atom.Tt).
+	ElemAttrAtom(atom.Details, atom.Open).
+	ElemAtom(atom.Summary)

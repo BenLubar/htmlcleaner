@@ -11,24 +11,11 @@ import (
 )
 
 func ExampleClean() {
-	config := &htmlcleaner.Config{
-		Elem: map[atom.Atom]map[atom.Atom]bool{
-			atom.Span: {
-				atom.Class: true,
-			},
-			atom.A: {
-				atom.Href: true,
-			},
-		},
-		AttrMatch: map[atom.Atom]map[atom.Atom]*regexp.Regexp{
-			atom.Span: {
-				atom.Class: regexp.MustCompile(`\Afa-spin\z`),
-			},
-		},
+	config := (&htmlcleaner.Config{
 		ValidateURL: func(u *url.URL) bool {
-			return u.Scheme != "http"
+			return u.Scheme == "https"
 		},
-	}
+	}).ElemAttrAtomMatch(atom.Span, atom.Class, regexp.MustCompile(`\Afa-spin\z`)).ElemAttrAtom(atom.A, atom.Href)
 
 	fmt.Println(htmlcleaner.Clean(config, htmlcleaner.Preprocess(config, `<span class="fa-spin">[whee]</span>
 <span class="hello">[aww]</span>

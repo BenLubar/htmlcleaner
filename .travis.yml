@@ -1,0 +1,16 @@
+language: go
+sudo: false
+go:
+  - 1.7
+  - tip
+before_install:
+  - go get github.com/mattn/goveralls
+script:
+  - $HOME/gopath/bin/goveralls -service=travis-ci
+notifications:
+  webhooks:
+    urls:
+      - https://webhooks.gitter.im/e/b7a046aa93ac3d8e5262
+    on_success: change
+    on_failure: always
+    on_start: never
