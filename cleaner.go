@@ -121,6 +121,7 @@ func Clean(c *Config, fragment string) string {
 }
 
 var isBlockElement = map[atom.Atom]bool{
+	0:               true, // custom elements are not wrapped
 	atom.Address:    true,
 	atom.Article:    true,
 	atom.Aside:      true,
@@ -163,6 +164,33 @@ var isBlockElement = map[atom.Atom]bool{
 // CleanNodes calls CleanNode on each node, and additionally wraps inline
 // elements in <p> tags and wraps dangling <li> tags in <ul> tags.
 func CleanNodes(c *Config, nodes []*html.Node) []*html.Node {
+	return cleanNodes(c, deepCopyAll(nodes))
+}
+
+func deepCopyAll(nodes []*html.Node) []*html.Node {
+	clone := make([]*html.Node, len(nodes))
+	for i, n := range nodes {
+		clone[i] = deepCopy(n)
+	}
+	return clone
+}
+
+func deepCopy(n *html.Node) *html.Node {
+	clone := &html.Node{
+		Type:      n.Type,
+		Attr:      make([]html.Attribute, len(n.Attr)),
+		Namespace: n.Namespace,
+		Data:      n.Data,
+		DataAtom:  n.DataAtom,
+	}
+	copy(clone.Attr, n.Attr)
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		clone.AppendChild(deepCopy(c))
+	}
+	return clone
+}
+
+func cleanNodes(c *Config, nodes []*html.Node) []*html.Node {
 	if c == nil {
 		c = DefaultConfig
 	}
@@ -175,47 +203,50 @@ func CleanNodes(c *Config, nodes []*html.Node) []*html.Node {
 				Data:     "ul",
 				DataAtom: atom.Ul,
 			}
-			nodes[i].Parent = nil
 			wrapper.AppendChild(nodes[i])
 			nodes[i] = wrapper
 		}
 	}
 
 	if c.WrapText {
-		wrapped := make([]*html.Node, 0, len(nodes))
-		var wrapper *html.Node
-		appendWrapper := func() {
-			if wrapper != nil {
-				// render and re-parse so p-inline-p expands
-				wrapped = append(wrapped, ParseDepth(Render(wrapper), 0)...)
-				wrapper = nil
-			}
-		}
-		for _, n := range nodes {
-			if n.Type == html.ElementNode && isBlockElement[n.DataAtom] {
-				appendWrapper()
-				wrapped = append(wrapped, n)
-				continue
-			}
-			if wrapper == nil && n.Type == html.TextNode && strings.TrimSpace(n.Data) == "" {
-				wrapped = append(wrapped, n)
-				continue
-			}
-			if wrapper == nil {
-				wrapper = &html.Node{
-					Type:     html.ElementNode,
-					Data:     "p",
-					DataAtom: atom.P,
-				}
-			}
-
-			wrapper.AppendChild(n)
-		}
-		appendWrapper()
-		nodes = wrapped
+		nodes = wrapText(nodes)
 	}
 
 	return nodes
+}
+
+func wrapText(nodes []*html.Node) []*html.Node {
+	wrapped := make([]*html.Node, 0, len(nodes))
+	var wrapper *html.Node
+	appendWrapper := func() {
+		if wrapper != nil {
+			// render and re-parse so p-inline-p expands
+			wrapped = append(wrapped, ParseDepth(Render(wrapper), 0)...)
+			wrapper = nil
+		}
+	}
+	for _, n := range nodes {
+		if n.Type == html.ElementNode && isBlockElement[n.DataAtom] {
+			appendWrapper()
+			wrapped = append(wrapped, n)
+			continue
+		}
+		if wrapper == nil && n.Type == html.TextNode && strings.TrimSpace(n.Data) == "" {
+			wrapped = append(wrapped, n)
+			continue
+		}
+		if wrapper == nil {
+			wrapper = &html.Node{
+				Type:     html.ElementNode,
+				Data:     "p",
+				DataAtom: atom.P,
+			}
+		}
+
+		wrapper.AppendChild(n)
+	}
+	appendWrapper()
+	return wrapped
 }
 
 func text(s string) *html.Node {
@@ -232,7 +263,7 @@ func CleanNode(c *Config, n *html.Node) *html.Node {
 	if c == nil {
 		c = DefaultConfig
 	}
-	return filterNode(c, n)
+	return filterNode(c, deepCopy(n))
 }
 
 func filterNode(c *Config, n *html.Node) *html.Node {
@@ -252,10 +283,6 @@ func cleanNode(c *Config, n *html.Node) *html.Node {
 	allowedAttr, ok1 := c.elem[n.DataAtom]
 	customAttr, ok2 := c.elemCustom[n.Data]
 	if ok1 || ok2 {
-		// copy the node
-		tmp := *n
-		n = &tmp
-
 		cleanChildren(c, n)
 
 		haveSrc := false
@@ -332,22 +359,24 @@ func cleanURL(c *Config, a atom.Atom, attr *html.Attribute) bool {
 
 func cleanChildren(c *Config, parent *html.Node) {
 	var children []*html.Node
-	for child := parent.FirstChild; child != nil; child = child.NextSibling {
+	for parent.FirstChild != nil {
+		child := parent.FirstChild
+		parent.RemoveChild(child)
 		children = append(children, filterNode(c, child))
 	}
 
-	for i, child := range children {
-		child.Parent = parent
-		if i == 0 {
-			parent.FirstChild = child
-		} else {
-			child.PrevSibling = children[i-1]
+	if c.WrapText {
+		_, ok := c.wrap[parent.DataAtom]
+		if !ok && parent.DataAtom == 0 {
+			_, ok = c.wrapCustom[parent.Data]
 		}
-		if i == len(children)-1 {
-			parent.LastChild = child
-		} else {
-			child.NextSibling = children[i+1]
+		if ok {
+			children = wrapText(children)
 		}
+	}
+
+	for _, child := range children {
+		parent.AppendChild(child)
 	}
 }
 

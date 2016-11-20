@@ -13,6 +13,8 @@ type Config struct {
 	attr       map[atom.Atom]struct{}
 	elemCustom map[string]map[string]*regexp.Regexp
 	attrCustom map[string]struct{}
+	wrap       map[atom.Atom]struct{}
+	wrapCustom map[string]struct{}
 
 	// A custom URL validation function. If it is set and returns false,
 	// the attribute will be removed. Called for attributes such as src
@@ -150,6 +152,40 @@ func (c *Config) ElemAttrAtomMatch(elem, attr atom.Atom, match *regexp.Regexp) *
 	}
 
 	attrs[attr] = match
+
+	return c
+}
+
+// WrapTextInside makes an element's children behave as if they are root nodes
+// in the context of WrapText. The receiver is returned to allow call chaining.
+func (c *Config) WrapTextInside(names ...string) *Config {
+	if c.wrapCustom == nil {
+		c.wrapCustom = make(map[string]struct{})
+	}
+
+	for _, name := range names {
+		if a := atom.Lookup([]byte(name)); a != 0 {
+			c.WrapTextInsideAtom(a)
+			continue
+		}
+
+		c.wrapCustom[name] = struct{}{}
+	}
+
+	return c
+}
+
+// WrapTextInsideAtom makes an element's children behave as if they are root
+// nodes in the context of WrapText. The receiver is returned to allow call
+// chaining.
+func (c *Config) WrapTextInsideAtom(elem ...atom.Atom) *Config {
+	if c.wrap == nil {
+		c.wrap = make(map[atom.Atom]struct{})
+	}
+
+	for _, a := range elem {
+		c.wrap[a] = struct{}{}
+	}
 
 	return c
 }
